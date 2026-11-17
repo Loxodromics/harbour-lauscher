@@ -33,7 +33,10 @@ namespace mdr
 
         state.mProtocol = {};
         SendCommandACK(t1::GetProtocolInfo);
-        const int protocolResult = co_await Await(AWAIT_PROTOCOL_INFO);
+        // A WH-1000XM3 sends the answer before it acknowledges the request, so the reply may
+        // have been handled while this task was still waiting for the ACK. Awake() on an
+        // awaiter nobody holds yet is lost, and waiting for it now only runs into the timeout.
+        const int protocolResult = state.mProtocol.hasTable1 ? MDR_RESULT_OK : co_await Await(AWAIT_PROTOCOL_INFO);
         if (protocolResult != MDR_RESULT_OK)
             co_return SetLastError(protocolResult, "Unable to initialize MDR V1");
 
@@ -50,7 +53,11 @@ namespace mdr
         {
             /* Support Functions */
             SendCommandACK(t1::GetSupportFunction);
-            const int supportResult = co_await Await(AWAIT_SUPPORT_FUNCTION);
+            // Same ordering as the protocol info above: the answer may already be in.
+            const int supportResult =
+                state.mSupport.provenance == DetailsV1::SupportStates::Provenance::ADVERTISED
+                    ? MDR_RESULT_OK
+                    : co_await Await(AWAIT_SUPPORT_FUNCTION);
             if (supportResult != MDR_RESULT_OK)
                 co_return SetLastError(MDR_RESULT_ERROR_NOT_SUPPORTED, "Device failed to respond to support function request");
 

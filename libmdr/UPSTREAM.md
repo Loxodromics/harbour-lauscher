@@ -175,8 +175,32 @@ is the right side's level, which is a valid charging status only at 0 %, 1 % or 
   owners running a client that has both commits — which is the cheaper route whenever the
   reporter can install a build.
 
-The copy is verbatim - `diff -r` against a checkout's `libmdr/` shows no differences -
-except for two files added here from that repository's root:
+**A stopgap that exists only in this copy.** A WH-1000XM3 answers a request *before* it
+acknowledges it: `CONNECT_RET_PROTOCOL_INFO` and then the ACK, arriving in a single read.
+`RequestInitV1()` sends the request through `SendCommandACK`, which suspends the task on
+`AWAIT_ACK`; the reply is handled in the meantime and calls `Awake(AWAIT_PROTOCOL_INFO)`
+on an awaiter nobody holds yet, which does nothing. When the ACK arrives the task goes on
+to wait for a reply that has already been processed, and initialization ends in "Unable to
+initialize MDR V1 (Timed out)" after the 5 s default. A WH-1000XM4 sends the ACK first,
+which is why pull request #2 did not meet it.
+
+`HeadphonesV1.cpp` now skips the wait when the answer is already recorded
+(`mProtocol.hasTable1` for the protocol info, the support provenance for the support
+function request, which has the same shape). Found by reading libmdr's own frame log
+(`MDR_DEBUG`, see [../CLAUDE.md](../CLAUDE.md)) on a WH-1000XM3; connects and shows
+battery, playback, ambient sound control, equalizer and DSEE HX afterwards.
+
+**SonyHeadphonesClient has the proper fix**, in `c4887bee` ("Keep replies that arrive ahead
+of their ACK", 2026-10-10, branch `v1-compat`), which post-dates the state this copy was
+taken from. Awake signals are kept against a packet counter, so a reply that arrives after
+its request was sent satisfies the later wait whatever order the ACK came in, for every
+awaited reply and for V2 as well. It was read, not run: nobody has tried it against an XM3.
+The next refresh should therefore replace the change described above rather than carry it,
+and `diff -r` will show `HeadphonesV1.cpp` differing until then.
+
+Apart from that change the copy is verbatim - `diff -r` against a checkout's `libmdr/`
+shows nothing but `HeadphonesV1.cpp` - except for two files added here from that
+repository's root:
 
 - `upstream/LICENSE` - the project's MIT licence, which covers this code.
 - `upstream/AGENTS.md` - the payload struct conventions, referenced throughout
